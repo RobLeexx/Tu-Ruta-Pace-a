@@ -4,6 +4,7 @@ import 'package:ayni_ruta/core/widgets/atoms/app_buttons.dart';
 import 'package:ayni_ruta/core/widgets/atoms/app_input_label.dart';
 import 'package:ayni_ruta/core/widgets/molecules/brand_mark.dart';
 import 'package:ayni_ruta/core/widgets/organisms/app_screen.dart';
+import 'package:ayni_ruta/modules/auth/domain/flow_zero_session.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -82,6 +83,8 @@ class _AuthScreenState extends State<AuthScreen> {
     } on ApiException catch (error) {
       _showError(error.message);
     } on AuthException catch (error) {
+      _showError(error.message);
+    } on FlowZeroException catch (error) {
       _showError(error.message);
     } catch (_) {
       _showError('No pudimos completar tu solicitud. Intenta de nuevo.');

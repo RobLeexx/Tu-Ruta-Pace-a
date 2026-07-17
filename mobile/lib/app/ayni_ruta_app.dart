@@ -1,14 +1,11 @@
-import 'package:ayni_ruta/core/api/api_client.dart';
-import 'package:ayni_ruta/core/config/app_config.dart';
 import 'package:ayni_ruta/core/design/app_colors.dart';
 import 'package:ayni_ruta/core/design/app_theme.dart';
-import 'package:ayni_ruta/core/supabase/auth_service.dart';
 import 'package:ayni_ruta/core/widgets/organisms/app_screen.dart';
+import 'package:ayni_ruta/modules/auth/data/flow_zero_repository.dart';
+import 'package:ayni_ruta/modules/auth/domain/flow_zero_session.dart';
 import 'package:ayni_ruta/modules/auth/presentation/auth_screen.dart';
 import 'package:ayni_ruta/modules/auth/presentation/welcome_screen.dart';
-import 'package:ayni_ruta/modules/profile/data/profile_api.dart';
 import 'package:ayni_ruta/modules/profile/domain/travel_preferences.dart';
-import 'package:ayni_ruta/modules/profile/domain/user_profile.dart';
 import 'package:ayni_ruta/modules/profile/presentation/preferences_screen.dart';
 import 'package:ayni_ruta/modules/profile/presentation/profile_screen.dart';
 import 'package:ayni_ruta/modules/routing/presentation/home_screen.dart';
@@ -26,8 +23,7 @@ class AyniRutaApp extends StatefulWidget {
 }
 
 class _AyniRutaAppState extends State<AyniRutaApp> {
-  final _authService = AuthService();
-  final _profileApi = ProfileApi();
+  final _repository = createFlowZeroRepository();
 
   FlowStage _stage = FlowStage.loading;
   var _isNewUser = true;
@@ -37,15 +33,12 @@ class _AyniRutaAppState extends State<AyniRutaApp> {
   AccessibilityProfile _accessibility = AccessibilityProfile.none;
   TravelPriority _priority = TravelPriority.time;
 
-  bool get _isReadyForAuth =>
-      AppConfig.isConfigured && widget.initializationError == null;
+  bool get _isReadyForAuth => widget.initializationError == null;
 
   @override
   void initState() {
     super.initState();
-    if (_isReadyForAuth) {
-      _restoreSession();
-    }
+    if (_isReadyForAuth) _restoreSession();
   }
 
   void _showStage(FlowStage stage) => setState(() => _stage = stage);
@@ -56,14 +49,14 @@ class _AyniRutaAppState extends State<AyniRutaApp> {
   });
 
   Future<void> _restoreSession() async {
-    final session = _authService.currentSession;
-    if (session == null) {
-      if (mounted) _showStage(FlowStage.welcome);
-      return;
-    }
-
     try {
-      await _loadProfile(displayName: null, nextStage: FlowStage.home);
+      final session = await _repository.restore();
+      if (!mounted) return;
+      if (session == null) {
+        _showStage(FlowStage.welcome);
+        return;
+      }
+      _applySession(session, nextStage: FlowStage.home);
     } catch (_) {
       if (mounted) _showStage(FlowStage.welcome);
     }
@@ -75,38 +68,19 @@ class _AyniRutaAppState extends State<AyniRutaApp> {
     required String password,
     required bool isNewUser,
   }) async {
-    if (isNewUser) {
-      final session = await _authService.signUp(
+    final session = await _repository.authenticate(
+      FlowZeroCredentials(
+        name: name,
         email: email,
         password: password,
-      );
-      if (session == null) {
-        throw const ApiException(
-          'Revisa tu correo y confirma tu cuenta antes de iniciar sesión.',
-        );
-      }
-    } else {
-      await _authService.signIn(email: email, password: password);
-    }
-
-    await _loadProfile(
-      displayName: isNewUser ? name : null,
+        isNewUser: isNewUser,
+      ),
+    );
+    if (!mounted) return;
+    _applySession(
+      session,
       nextStage: isNewUser ? FlowStage.preferences : FlowStage.home,
     );
-  }
-
-  Future<void> _loadProfile({
-    required String? displayName,
-    required FlowStage nextStage,
-  }) async {
-    await _profileApi.bootstrap(displayName: displayName);
-    final profile = await _profileApi.getMe();
-    final email = _authService.currentSession?.user.email ?? _email;
-    if (!mounted) return;
-    setState(() {
-      _applyProfile(profile, email: email);
-      _stage = nextStage;
-    });
   }
 
   Future<void> _savePreferences(
@@ -133,27 +107,26 @@ class _AyniRutaAppState extends State<AyniRutaApp> {
     required AccessibilityProfile accessibility,
     required TravelPriority priority,
   }) async {
-    final profile = await _profileApi.update(
+    final session = await _repository.updateProfile(
       displayName: displayName,
       accessibility: accessibility,
       priority: priority,
     );
     if (!mounted) return;
-    setState(() {
-      _applyProfile(
-        profile,
-        email: _authService.currentSession?.user.email ?? _email,
-      );
-      _stage = FlowStage.home;
-    });
+    _applySession(session, nextStage: FlowStage.home);
   }
 
-  void _applyProfile(UserProfile profile, {required String email}) {
-    _name = profile.displayName ?? email.split('@').first;
-    _email = email;
-    _ayniPoints = profile.ayniPoints;
-    _accessibility = profile.accessibility;
-    _priority = profile.priority;
+  void _applySession(FlowZeroSession session, {required FlowStage nextStage}) {
+    final profile = session.profile;
+    final email = session.email;
+    setState(() {
+      _name = profile.displayName ?? email.split('@').first;
+      _email = email;
+      _ayniPoints = profile.ayniPoints;
+      _accessibility = profile.accessibility;
+      _priority = profile.priority;
+      _stage = nextStage;
+    });
   }
 
   Widget _buildCurrentScreen() {
@@ -224,8 +197,7 @@ class ConfigurationRequiredScreen extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         Text(
-          error ??
-              'Inicia la app con SUPABASE_URL, SUPABASE_ANON_KEY y API_BASE_URL para usar tu cuenta real.',
+          error ?? 'No se pudo inicializar la configuracion de produccion.',
           style: Theme.of(
             context,
           ).textTheme.bodyLarge?.copyWith(color: AppColors.muted),

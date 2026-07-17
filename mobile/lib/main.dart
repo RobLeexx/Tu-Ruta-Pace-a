@@ -9,7 +9,10 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   String? initializationError;
 
-  if (AppConfig.isConfigured) {
+  if (AppConfig.isProduction && !AppConfig.hasProductionCredentials) {
+    initializationError =
+        'APP_ENV=production requires SUPABASE_URL, SUPABASE_ANON_KEY, and API_BASE_URL.';
+  } else if (AppConfig.isProduction) {
     try {
       await Supabase.initialize(
         url: AppConfig.supabaseUrl,
