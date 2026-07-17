@@ -1,20 +1,26 @@
+import 'package:ayni_ruta/app/ayni_ruta_app.dart';
+import 'package:ayni_ruta/core/config/app_config.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-void main() {
-  runApp(const MainApp());
-}
+export 'app/ayni_ruta_app.dart';
 
-class MainApp extends StatelessWidget {
-  const MainApp({super.key});
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  String? initializationError;
 
-  @override
-  Widget build(BuildContext context) {
-    return const MaterialApp(
-      home: Scaffold(
-        body: Center(
-          child: Text('Hello World!'),
-        ),
-      ),
-    );
+  if (AppConfig.isConfigured) {
+    try {
+      await Supabase.initialize(
+        url: AppConfig.supabaseUrl,
+        publishableKey: AppConfig.supabaseAnonKey,
+      );
+    } on AuthException catch (error) {
+      initializationError = error.message;
+    } catch (_) {
+      initializationError = 'No se pudo inicializar Supabase.';
+    }
   }
+
+  runApp(AyniRutaApp(initializationError: initializationError));
 }
